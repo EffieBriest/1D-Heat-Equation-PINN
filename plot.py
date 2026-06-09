@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import torch
 import numpy as np
 import analyticSolutions
+import finiteDifference
 
 def multi_t_plot(model1, alpha, time_points):
     model1.eval()
@@ -29,6 +30,48 @@ def multi_t_plot(model1, alpha, time_points):
         ax.plot(x_np, u_real_np, label="Real solution")
         ax.plot(x_np, u_pred_np, label="PINN prediction")
         ax.plot(x_np, abs_error_np, label="Absolute error")
+
+        ax.set_xlabel("x")
+        ax.set_ylabel("u(x,t)")
+        ax.set_title(f"t = {t_fixed}")
+        ax.legend()
+
+    plt.tight_layout()
+    plt.show()
+
+def multi_t_plot_with_fd(model1, alpha, time_points):
+    model1.eval()
+
+    device = next(model1.parameters()).device
+
+    alpha_value = float(alpha.detach().cpu()) if torch.is_tensor(alpha) else float(alpha)
+
+    x_fd, fd_solutions, dt, r = finiteDifference.solve_heat_equation_fd(
+        alpha=alpha_value,
+        T=max(time_points),
+        nx=201,
+        time_points=time_points
+    )
+
+    x_plot = torch.tensor(x_fd, dtype=torch.float32, device=device).reshape(-1, 1)
+
+    fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+    axes = axes.flatten()
+
+    for ax, t_fixed in zip(axes, time_points):
+        t_plot = torch.full_like(x_plot, t_fixed)
+
+        with torch.no_grad():
+            u_real = analyticSolutions.u(alpha, x_plot, t_plot)
+            u_pred = model1(x_plot, t_plot)
+
+        u_real_np = u_real.detach().cpu().numpy()
+        u_pred_np = u_pred.detach().cpu().numpy()
+        u_fd_np = fd_solutions[t_fixed]
+
+        ax.plot(x_fd, u_real_np, label="Real solution")
+        ax.plot(x_fd, u_pred_np, label="PINN prediction")
+        ax.plot(x_fd, u_fd_np, label="Finite difference")
 
         ax.set_xlabel("x")
         ax.set_ylabel("u(x,t)")

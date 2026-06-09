@@ -15,7 +15,7 @@ print(f"Using device: {device}")
 
 alpha = 1.0
 
-epochs = 50_000
+epochs = 50_00
 learning_rate = 0.001
 
 N_INTERIOR = 10_000
@@ -100,6 +100,6 @@ for epoch in tqdm(range(epochs)):
 pinn.eval()
 
 time_points = [0.0, 0.25, 0.5, 1.0]
-
 plot.plot_loss_history(loss_history, window=500)
 plot.multi_t_plot(pinn, alpha, time_points)
+plot.multi_t_plot_with_fd(pinn, alpha, time_points)
