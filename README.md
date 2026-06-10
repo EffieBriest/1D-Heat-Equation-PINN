@@ -102,6 +102,7 @@ The derivatives needed for the PDE residual are computed with PyTorch automatic 
 ## PINN Loss Function
 
 The total PINN loss consists of three parts:
+
 $$
 L_{\text{total}}=
 \lambda_{\text{PDE}} L_{\text{PDE}}
@@ -110,7 +111,9 @@ L_{\text{total}}=
 +
 \lambda_{\text{IC}} L_{\text{IC}}.
 $$
+
 The loss terms enforce different parts of the PDE problem.
+
 
 ---
 
