@@ -1,6 +1,9 @@
 import torch
 from tqdm.auto import tqdm
-
+from pathlib import Path
+import sys
+forward_project_path = Path(__file__).resolve().parents[1] / "01_1D-Heat-Equation-Forward"
+sys.path.append(str(forward_project_path))
 import model
 import losses
 import sampling
@@ -170,4 +173,3 @@ time_points = [0.0, 0.25, 0.5, 1.0]
 
 plot.plot_loss_history(loss_history, window=500)
 plot.multi_t_plot(pinn, alpha, time_points)
-plot.multi_t_plot_with_fd(pinn, alpha, time_points)

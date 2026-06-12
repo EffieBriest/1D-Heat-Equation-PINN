@@ -2,6 +2,10 @@ import matplotlib.pyplot as plt
 import torch
 import numpy as np
 import analyticSolutions
+from pathlib import Path
+import sys
+forward_project_path = Path(__file__).resolve().parents[1] / "03_1D-Heat-Equation-Finite-Difference"
+sys.path.append(str(forward_project_path))
 import finiteDifference
 
 def multi_t_plot(model1, alpha, time_points):

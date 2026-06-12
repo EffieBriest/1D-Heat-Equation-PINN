@@ -34,14 +34,15 @@ LBFGS_MAX_ITER = 1000
 N_INTERIOR = 2000
 N_BOUNDARY = 200
 N_INITIAL = 200
-N_OBS = 500
+N_OBS = 1000000 #1000 #200 #100
 
-LAMBDA_PDE = 5.0
-LAMBDA_BC = 5.0
-LAMBDA_IC = 5.0
-LAMBDA_OBS = 5.0
+LAMBDA_PDE = 1.0  #10   #2
+LAMBDA_BC = 1.0
+LAMBDA_IC = 1.0
+LAMBDA_OBS = 1.0 #10    #2
 
 alpha_true = 1.0
+noise_level = 10.0  
 
 LR_NET = 2e-4
 LR_ALPHA = 5e-3
@@ -71,9 +72,12 @@ x_obs, t_obs, u_obs = samplingInversePinn.sample_observation_points(
     t_max=T_OBS_MAX,
 )
 
+
+u_obs_noisy = u_obs + noise_level * torch.std(u_obs) * torch.randn_like(u_obs)
+
 x_obs = x_obs.detach()
 t_obs = t_obs.detach()
-u_obs = u_obs.detach()
+u_obs_noisy = u_obs_noisy.detach()
 
 x_f, t_f = sampling.sample_interior_points(N_INTERIOR, T=T, device=device)
 x_b, t_b = sampling.sample_boundary_points_u(N_BOUNDARY, T=T, device=device)
@@ -121,7 +125,7 @@ for epoch in tqdm(range(ADAM_EPOCHS)):
     loss_pde = lossesInversePinn.pde_loss(pinn, pinn.alpha, x_f, t_f)
     loss_bc = lossesInversePinn.boundary_loss(pinn, x_b, t_b)
     loss_ic = lossesInversePinn.initial_loss(pinn, x_ic, t_ic)
-    loss_obs = lossesInversePinn.observation_loss(pinn, x_obs, t_obs, u_obs)
+    loss_obs = lossesInversePinn.observation_loss(pinn, x_obs, t_obs, u_obs_noisy)
 
     loss = (
         LAMBDA_PDE * loss_pde
@@ -135,10 +139,10 @@ for epoch in tqdm(range(ADAM_EPOCHS)):
     optimizer.step()
 
     loss_history["total"].append(loss.detach().cpu().item())
-    loss_history["pde"].append(loss_pde.detach().cpu().item())
-    loss_history["bc"].append(loss_bc.detach().cpu().item())
-    loss_history["ic"].append(loss_ic.detach().cpu().item())
-    loss_history["obs"].append(loss_obs.detach().cpu().item())
+    loss_history["pde"].append(loss_pde.detach().cpu().item()/LAMBDA_PDE)
+    loss_history["bc"].append(loss_bc.detach().cpu().item()/LAMBDA_BC)
+    loss_history["ic"].append(loss_ic.detach().cpu().item()/LAMBDA_IC)
+    loss_history["obs"].append(loss_obs.detach().cpu().item()/LAMBDA_OBS)
     loss_history["alpha"].append(pinn.alpha.detach().cpu().item())
 
     if epoch % 100 == 0:
@@ -182,7 +186,7 @@ if USE_LBFGS:
         loss_pde = lossesInversePinn.pde_loss(pinn, pinn.alpha, x_f, t_f)
         loss_bc = lossesInversePinn.boundary_loss(pinn, x_b, t_b)
         loss_ic = lossesInversePinn.initial_loss(pinn, x_ic, t_ic)
-        loss_obs = lossesInversePinn.observation_loss(pinn, x_obs, t_obs, u_obs)
+        loss_obs = lossesInversePinn.observation_loss(pinn, x_obs, t_obs, u_obs_noisy)
 
         loss = (
             LAMBDA_PDE * loss_pde
@@ -236,4 +240,3 @@ time_points = [0.0, 0.25, 0.5, 1.0]
 plotInversePinn.plot_alpha_convergence(loss_history, alpha_true=alpha_true)
 plot.plot_loss_history(loss_history, window=500)
 plot.multi_t_plot(pinn, final_alpha, time_points)
-plot.multi_t_plot_with_fd(pinn, final_alpha.item(), time_points)

@@ -1,6 +1,7 @@
 {
     "python-envs.defaultEnvManager": "ms-python.python:system",
     "python.analysis.extraPaths": [
-        "./01_1D-Heat-Equation-Forward"
+        "./01_1D-Heat-Equation-Forward",
+        "./03-1D-Heat-Equation-Finite-Difference"
     ]
 }

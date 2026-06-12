@@ -1,202 +1,89 @@
-# Simple Physics-Informed Neural Network for the 1D Heat Equation in PyTorch
+# Physics-Informed Neural Networks for the 1D Heat Equation
 
-## Project Summary
-(work in process, the inverse direction is not done yet. Also the finite difference method is not complete yet)
-This project implements a simple Physics-Informed Neural Network (PINN) in PyTorch to approximate the solution of the one-dimensional heat equation.  
-The project also includes a classical finite difference method as a numerical baseline.
+This project implements and compares three approaches for the one-dimensional heat equation:
 
-The goal is to compare three different solution approaches:
+1. a **forward Physics-Informed Neural Network**,
+2. an **inverse Physics-Informed Neural Network**, and
+3. a classical **finite difference baseline**.
 
-$$
-\text{Analytical solution}
-\quad vs \quad
-\text{PINN approximation}
-\quad vs \quad
-\text{Finite Difference approximation}
-$$
+The forward PINN learns the solution when the heat coefficient \(\alpha\) is known. The inverse PINN learns both the solution and the unknown coefficient \(\alpha\) from observation data. The finite difference method serves as a classical numerical reference.
 
-The implementation is intended as a clean introductory project for understanding how neural networks can be trained with physical constraints and how their results compare to a traditional numerical method.
+The project is designed as a clean learning-oriented implementation for understanding how PINNs work on both forward and inverse PDE problems.
 
 ---
 
-## Problem Definition
+## 1. Mathematical Problem
 
 We consider the one-dimensional heat equation
 
 $$
-u_t = \alpha u_{xx}
-$$
+u_t = \alpha u_{xx}$$
 
-on the spatial domain
+on the domain
 
-$$
-x \in [0,1]
-$$
-
-and time interval
-
-$$
-t \in [0,T].
-$$
-
-Equivalently, the PDE residual is written as
-
-$$
-r(x,t) = u_t(x,t) - \alpha u_{xx}(x,t).
-$$
+$$x \in [0,1], \qquad t \in [0,T].$$
 
 The initial condition is
 
-$$
-u(x,0)=\sin(\pi x),
-$$
+$$u(x,0)=\sin(\pi x),$$
 
 and the boundary conditions are homogeneous Dirichlet conditions:
 
-$$
-u(0,t)=0,
-\qquad
-u(1,t)=0.
-$$
+$$u(0,t)=0, \qquad u(1,t)=0.$$
 
-For this setup, the analytical solution is
+For this setup, the analytical solution is known:
 
-$$
-u(x,t)=e^{-\alpha \pi^2 t}\sin(\pi x).
-$$
+$$u(x,t)=e^{-\alpha \pi^2 t}\sin(\pi x).$$
 
-This known solution is used to evaluate both the PINN and the finite difference method.
+This exact solution is used to evaluate the forward PINN, compare the finite difference method, and generate synthetic observation data for the inverse PINN.
 
 ---
 
-## Physics-Informed Neural Network Idea
+## 2. Physics-Informed Neural Network Idea
 
-A standard neural network is usually trained with labeled input-output pairs.
+A standard neural network is usually trained only on input-output data. A Physics-Informed Neural Network also includes the governing differential equation in the loss function.
 
-A Physics-Informed Neural Network also uses the governing differential equation as part of the training objective.
+The network approximation is denoted by
 
-The neural network approximates the unknown solution
+$$u_\theta(x,t),$$
 
-$$
-u_\theta(x,t),
-$$
+where $\theta$ are the trainable neural network parameters. The PDE residual is
 
-where $\theta$ denotes the trainable weights and biases of the network.
+$$r_\theta(x,t)=\frac{\partial u_\theta}{\partial t}(x,t)-\alpha \frac{\partial^2 u_\theta}{\partial x^2}(x,t).$$
 
-The model receives two inputs:
-
-$$
-(x,t)
-$$
-
-and predicts one scalar output:
-
-$$
-u_\theta(x,t).
-$$
-
-The derivatives needed for the PDE residual are computed with PyTorch automatic differentiation.
+The PINN is trained to make this residual small at sampled interior collocation points.
 
 ---
 
-## PINN Loss Function
+## 3. Forward PINN
 
-The total PINN loss consists of three parts:
+### Goal
 
-$$
-L_{\text{total}}=
-\lambda_{\text{PDE}} L_{\text{PDE}}
-+
-\lambda_{\text{BC}} L_{\text{BC}}
-+
-\lambda_{\text{IC}} L_{\text{IC}}.
-$$
+In the forward problem, \(\alpha\) is known. The model learns the solution
 
-The loss terms enforce different parts of the PDE problem.
+$$u_\theta(x,t) \approx u(x,t).$$
 
+The network receives two inputs, \((x,t)\), and outputs one scalar value, \(u_\theta(x,t)\).
 
----
+### Loss Function
 
-### PDE Residual Loss
+The forward PINN uses three loss terms:
 
-The PDE residual is
+$$L_{\text{total}}=\lambda_{\text{PDE}}L_{\text{PDE}}+\lambda_{\text{BC}}L_{\text{BC}}+\lambda_{\text{IC}}L_{\text{IC}}.$$
 
-$$
-r_\theta(x,t)=
-\frac{\partial u_\theta}{\partial t}(x,t)
--\alpha\frac{\partial^2 u_\theta}{\partial x^2}(x,t).
-$$
+The terms are:
 
-The PDE loss is the mean squared residual over interior collocation points:
+$$L_{\text{PDE}}=\frac{1}{N_f}\sum_{i=1}^{N_f}\left|r_\theta(x_i,t_i)\right|^2,$$
 
-$$
-L_{\text{PDE}}=
-\frac{1}{N_f}
-\sum_{i=1}^{N_f}
-\left|
-r_\theta(x_i,t_i)
-\right|^2.
-$$
+$$L_{\text{IC}}=\frac{1}{N_{\text{IC}}}\sum_{i=1}^{N_{\text{IC}}}\left|u_\theta(x_i,0)-\sin(\pi x_i)\right|^2,$$
 
-This term enforces the heat equation inside the space-time domain.
+$$L_{\text{BC}}=\frac{1}{N_{\text{BC}}}\sum_{i=1}^{N_{\text{BC}}}\left|u_\theta(x_i,t_i)\right|^2, \qquad x_i\in\{0,1\}.$$
 
----
+The PDE loss enforces the heat equation inside the domain. The initial condition loss enforces the correct starting profile. The boundary condition loss enforces zero temperature at both boundaries.
 
-### Initial Condition Loss
+### Network Architecture
 
-The initial condition is
-
-$$
-u(x,0)=\sin(\pi x).
-$$
-
-The initial condition loss is
-
-$$
-L_{\text{IC}}=
-\frac{1}{N_{\text{IC}}}
-\sum_{i=1}^{N_{\text{IC}}}
-\left|
-u_\theta(x_i,0)-\sin(\pi x_i)
-\right|^2.
-$$
-
-This term enforces the correct starting state at \(t=0\).
-
----
-
-### Boundary Condition Loss
-
-The boundary conditions are
-
-$$
-u(0,t)=0,
-\qquad
-u(1,t)=0.
-$$
-
-The boundary condition loss is
-
-$$
-L_{\text{BC}}=
-\frac{1}{N_{\text{BC}}}
-\sum_{i=1}^{N_{\text{BC}}}
-\left|
-u_\theta(x_i,t_i)
-\right|^2,
-\qquad
-x_i \in \{0,1\}.
-$$
-
-This term enforces the solution to stay close to zero at the spatial boundaries.
-
----
-
-## Neural Network Architecture
-
-The PINN uses a fully connected multilayer perceptron.
-
-A typical architecture is:
+The PINN uses a fully connected multilayer perceptron:
 
 ```python
 nn.Linear(2, hidden_dim)
@@ -206,30 +93,11 @@ nn.Tanh()
 nn.Linear(hidden_dim, 1)
 ```
 
-The input dimension is 2 because the model receives both \(x\) and \(t\).  
-The output dimension is 1 because the model predicts the scalar value \(u(x,t)\).
+`Tanh` is used because the PDE residual requires smooth derivatives, especially the second derivative $u_{xx}$.
 
-The `Tanh` activation is used because PINNs require smooth derivatives. This is important because the heat equation contains the second derivative \(u_{xx}\).
+### Automatic Differentiation
 
----
-
-## Automatic Differentiation
-
-The PDE residual requires derivatives of the neural network output with respect to the inputs.
-
-For the heat equation, the required derivatives are:
-
-$$
-u_t
-$$
-
-and
-
-$$
-u_{xx}.
-$$
-
-Conceptually, the computation is:
+The PDE residual requires $u_t$ and $u_{xx}$. These are computed with PyTorch autograd:
 
 ```python
 u = model(x, t)
@@ -242,374 +110,346 @@ residual = u_t - alpha * u_xx
 loss_pde = mean(residual ** 2)
 ```
 
-This allows the network to learn from the PDE itself, even without labeled solution values at interior points.
+The collocation points must track gradients:
+
+```python
+x = x.clone().detach().requires_grad_(True)
+t = t.clone().detach().requires_grad_(True)
+```
+
+This creates a fresh autograd graph for every PDE-loss evaluation and avoids reusing old computation graphs across epochs.
+
+### Sampling Strategy
+
+The forward PINN samples three types of training points:
+
+| Point type | Domain | Purpose |
+|---|---:|---|
+| Interior points | $x\in[0,1],\ t\in[0,T]$ | PDE residual loss |
+| Boundary points | $x=0$ or $x=1$, random $t$ | Boundary condition loss |
+| Initial points | random $x$, $t=0$ | Initial condition loss |
 
 ---
 
-## Sampling Strategy
+## 4. Inverse PINN
 
-The project samples three different types of points.
+### Goal
 
-### Interior Points
+In the inverse problem, \(\alpha\) is unknown. The model learns both
 
-Interior collocation points are sampled from the space-time domain:
-
-$$
-x \in [0,1],
-\qquad
-t \in [0,T].
-$$
-
-These points are used for the PDE residual loss.
-
----
-
-### Boundary Points
-
-Boundary points are sampled at
-
-$$
-x=0
-$$
+$$u_\theta(x,t)$$
 
 and
 
-$$
-x=1
-$$
+$$\alpha.$$
 
-with random time values \(t\).
+The forward problem is
 
-These points are used for the boundary condition loss.
+$$\alpha \text{ known} \quad \longrightarrow \quad u(x,t) \text{ learned},$$
+
+while the inverse problem is
+
+$$u_{\text{obs}}(x_i,t_i) \text{ partially known},\ \alpha \text{ unknown} \quad \longrightarrow \quad u_\theta(x,t) \text{ and } \alpha \text{ learned}.$$
+
+### Observation Data
+
+Synthetic observations are generated from the analytical solution:
+
+$$u_{\text{obs}}=e^{-\alpha_{\text{true}}\pi^2 t_{\text{obs}}}\sin(\pi x_{\text{obs}}).$$
+
+Optional Gaussian noise can be added:
+
+$$u_{\text{obs,noisy}}=u_{\text{obs}}+\sigma_{\text{noise}}\varepsilon, \qquad \varepsilon\sim\mathcal{N}(0,1).$$
+
+In code:
+
+```python
+noise_level = 0.05
+u_obs_noisy = u_obs + noise_level * torch.std(u_obs) * torch.randn_like(u_obs)
+```
+
+The noise is scaled relative to the standard deviation of the clean observations.
+
+### Observation Time Window
+
+The inverse setup uses early-time observations:
+
+```python
+T_OBS_MIN = 0.02
+T_OBS_MAX = 0.30
+```
+
+This is useful because the solution still has visible magnitude at early times. At late times, the heat equation solution becomes close to zero, making different values of \(\alpha\) harder to distinguish numerically.
+
+### Loss Function
+
+The inverse PINN uses four loss terms:
+
+$$L_{\text{total}}=\lambda_{\text{PDE}}L_{\text{PDE}}+\lambda_{\text{BC}}L_{\text{BC}}+\lambda_{\text{IC}}L_{\text{IC}}+\lambda_{\text{OBS}}L_{\text{OBS}}.$$
+
+The observation loss is
+
+$$L_{\text{OBS}}=\frac{1}{N_{\text{OBS}}}\sum_{i=1}^{N_{\text{OBS}}}\left|u_\theta(x_i,t_i)-u_{\text{obs},i}\right|^2.$$
+
+The observation loss makes the model fit the data. The PDE loss connects this data fit to the unknown physical parameter \(\alpha\). Together, they allow parameter recovery.
+
+### Trainable Alpha
+
+The heat coefficient is included as a trainable model parameter. The optimization problem is
+
+$$\min_{\theta,\alpha} L_{\text{total}}(\theta,\alpha).$$
+
+The implementation uses separate learning rates for the network and for \(\alpha\):
+
+```python
+network_params = [p for name, p in pinn.named_parameters() if name != "alpha"]
+
+optimizer = torch.optim.Adam(
+    [
+        {"params": network_params, "lr": LR_NET},
+        {"params": [pinn.alpha], "lr": LR_ALPHA},
+    ]
+)
+```
+
+This is useful because \(\alpha\) is a single scalar and may require a different learning rate than the neural network weights.
 
 ---
 
-### Initial Points
+## 5. Optimization
 
-Initial points are sampled at
+The inverse PINN is trained in two stages:
 
-$$
-t=0
-$$
+1. **Adam phase**: robust first-order optimization to move the model into a good parameter region.
+2. **L-BFGS refinement**: quasi-Newton refinement to reduce the remaining residuals more accurately.
 
-with random spatial values \(x\).
-
-These points are used for the initial condition loss.
+This two-stage strategy is common for PINNs because the early training phase is often unstable, while the later phase benefits from more precise local optimization.
 
 ---
 
-## Finite Difference Method Baseline
+### Adam Phase
 
-To compare the PINN with a classical numerical method, this project also implements an explicit finite difference method for the one-dimensional heat equation.
+The first stage uses Adam. During this phase, the model updates both the neural network parameters $\theta$ and the unknown heat coefficient \(\alpha\).
 
-The heat equation is
-
-$$
-u_t = \alpha u_{xx},
-$$
-
-on the spatial domain
+The optimization problem is
 
 $$
-0 < x < 1
-$$
-
-with homogeneous Dirichlet boundary conditions
-
-$$
-u(0,t)=0,
-\qquad
-u(1,t)=0,
-$$
-
-and initial condition
-
-$$
-u(x,0)=\sin(\pi x).
-$$
-
-The finite difference method does not assume that the full solution \(u(x,t)\) is known.  
-Instead, it starts from the known initial condition and then uses the discretized heat equation to propagate the solution forward in time.
-
-We discretize the spatial and temporal domains by defining grid points
-
-$$
-x_i = i\Delta x,
-\qquad
-i=0,1,\dots,N,
-$$
-
-and
-
-$$
-t_n = n\Delta t,
-\qquad
-n=0,1,\dots,M.
-$$
-
-The numerical approximation is denoted by
-
-$$
-u_i^n \approx u(x_i,t_n).
-$$
-
-Here, $(u_i^n)$ represents the approximate solution value at spatial point $(x_i)$ and time $(t_n)$.
-
-Using a forward difference in time gives
-
-$$
-u_t(x_i,t^n)
-\approx
-\frac{u_i^{n+1}-u_i^n}{\Delta t}.
-$$
-
-Using a centered difference in space gives
-
-$$
-u_{xx}(x_i,t^n)
-\approx
-\frac{
-u_{i+1}^n - 2u_i^n + u_{i-1}^n
-}{
-\Delta x^2
-}.
-$$
-
-Substituting these approximations into the heat equation gives the FTCS scheme:
-
-$$
-\frac{u_i^{n+1}-u_i^n}{\Delta t}=
-\alpha
-\frac{
-u_{i+1}^n - 2u_i^n + u_{i-1}^n
-}{
-\Delta x^2
-}.
-$$
-
-Solving for the next time step gives the explicit update formula
-
-$$
-u_i^{n+1}=
-u_i^n
-+
-r
-\left(
-u_{i+1}^n - 2u_i^n + u_{i-1}^n
-\right),
+\min_{\theta,\alpha} L_{\text{total}}(\theta,\alpha),
 $$
 
 where
 
 $$
-r = \alpha \frac{\Delta t}{\Delta x^2}.
+L_{\text{total}}=
+\lambda_{\text{PDE}}L_{\text{PDE}}
++
+\lambda_{\text{BC}}L_{\text{BC}}
++
+\lambda_{\text{IC}}L_{\text{IC}}
++
+\lambda_{\text{OBS}}L_{\text{OBS}}.
 $$
 
-This formula is applied only to the interior grid points
+The PDE loss depends directly on \(\alpha\), because the heat equation residual is
 
 $$
-i=1,2,\dots,N-1.
+r(x,t)=u_t(x,t)-\alpha u_{xx}(x,t).
 $$
 
-The boundary values are fixed for all time steps:
+Therefore, the optimizer does not only learn the shape of the solution $u_\theta(x,t)$, but also adjusts $\alpha$ so that the learned solution satisfies the heat equation.
 
-$$
-u_0^n = 0,
-\qquad
-u_N^n = 0.
-$$
-
-The initial values are given by the initial condition:
-
-$$
-u_i^0 = \sin(\pi x_i).
-$$
-
-Therefore, the method first constructs the initial row of values at \(t=0\), then repeatedly computes the next time row from the previous one.
-
-The explicit FTCS scheme is easy to implement, but it is only stable if the time step is sufficiently small. For the one-dimensional heat equation, the stability condition is
-
-$$
-r=
-\alpha \frac{\Delta t}{\Delta x^2}
-\leq
-\frac{1}{2}.
-$$
-
-This means that when the spatial grid is refined, the time step usually has to be reduced as well.
-
-The finite difference approximation becomes more accurate when both $(\Delta x)$ and $(\Delta t)$ are made smaller. However, this also increases the computational cost because more spatial grid points and more time steps are required.
-
-In this project, the finite difference method is used as a classical numerical baseline. Its result is compared with both the analytical solution and the PINN approximation.
----
-
-
-
-## Comparison Strategy
-
-The project compares the three solution types at selected time points:
+During each Adam epoch, the loss terms are computed and combined:
 
 ```python
-time_points = [0.0, 0.25, 0.5, 1.0]
+loss_pde = lossesInversePinn.pde_loss(pinn, pinn.alpha, x_f, t_f)
+loss_bc = lossesInversePinn.boundary_loss(pinn, x_b, t_b)
+loss_ic = lossesInversePinn.initial_loss(pinn, x_ic, t_ic)
+loss_obs = lossesInversePinn.observation_loss(pinn, x_obs, t_obs, u_obs_noisy)
+
+loss = (
+    LAMBDA_PDE * loss_pde
+    + LAMBDA_BC * loss_bc
+    + LAMBDA_IC * loss_ic
+    + LAMBDA_OBS * loss_obs
+)
 ```
 
-For each fixed time \(t\), the following curves can be plotted:
+The standard PyTorch training step is then applied:
+
+```python
+optimizer.zero_grad()
+loss.backward()
+optimizer.step()
+```
+
+The backward pass computes gradients with respect to both trainable parts of the inverse PINN:
 
 $$
-u_{\text{exact}}(x,t),
-$$
-
-$$
-u_{\text{PINN}}(x,t),
-$$
-
-and
-
-$$
-u_{\text{FD}}(x,t).
-$$
-
-This allows a visual comparison of:
-
-- the analytical solution,
-- the neural network approximation,
-- the finite difference approximation.
-
-The absolute errors can also be compared:
-
-$$
-|u_{\text{PINN}} - u_{\text{exact}}|
+\nabla_\theta L_{\text{total}}
 $$
 
 and
 
 $$
-|u_{\text{FD}} - u_{\text{exact}}|.
+\frac{\partial L_{\text{total}}}{\partial \alpha}.
 $$
+
+Adam is useful in the early phase because the different loss components can have very different magnitudes. The network may not yet satisfy the boundary condition, the initial condition, the observation data, or the PDE residual well. This makes the optimization problem badly scaled.
+
+Adam handles this by adapting the effective step size for each parameter. For a parameter \(w\), it keeps moving averages of the gradient and the squared gradient:
+
+$$
+m_k = \beta_1 m_{k-1} + (1-\beta_1)g_k,
+$$
+
+$$
+v_k = \beta_2 v_{k-1} + (1-\beta_2)g_k^2.
+$$
+
+The update has the form
+
+$$
+w_{k+1}=w_k-
+\eta
+\frac{\hat{m}_k}{\sqrt{\hat{v}_k}+\varepsilon}.
+$$
+
+This helps stabilize the early training phase. Parameters with large or unstable gradients receive smaller effective updates, while parameters with smaller gradients can still be updated meaningfully.
+
+This is especially important for the inverse problem because $\theta$ and $\alpha$ behave very differently. The neural network parameters control the full function $u_\theta(x,t)$, while $\alpha$ is only a single scalar but has a direct effect on the PDE residual. For this reason, the implementation uses separate learning rates for the network and for $\alpha$.
 
 ---
 
-## Project Structure
+### L-BFGS Refinement
+
+After Adam, the inverse PINN can optionally be refined with L-BFGS:
+
+```python
+USE_LBFGS = True
+LBFGS_MAX_ITER = 1000
+```
+
+Adam is good at reaching a reasonable parameter region, but it does not explicitly use curvature information. Once the model is already close to a good solution, L-BFGS can often reduce the remaining residuals more precisely.
+
+L-BFGS is a quasi-Newton method. A full Newton method would use the Hessian matrix
+
+$$
+H=\nabla^2 L(\theta,\alpha)
+$$
+
+and compute an update direction of the form
+
+$$
+p_k=-H_k^{-1}\nabla L_k.
+$$
+
+For a neural network, the full Hessian is too large to compute and store. L-BFGS avoids this by building a limited-memory approximation of the inverse Hessian from recent parameter and gradient changes. In practice, this gives the optimizer some information about the local curvature of the loss landscape without explicitly forming the Hessian.
+
+PyTorch's L-BFGS optimizer requires a closure because one optimizer step may evaluate the loss multiple times. This is needed, for example, when the optimizer performs an internal line search to choose a suitable step size.
+
+```python
+def closure():
+    lbfgs_optimizer.zero_grad()
+
+    loss_pde = lossesInversePinn.pde_loss(pinn, pinn.alpha, x_f, t_f)
+    loss_bc = lossesInversePinn.boundary_loss(pinn, x_b, t_b)
+    loss_ic = lossesInversePinn.initial_loss(pinn, x_ic, t_ic)
+    loss_obs = lossesInversePinn.observation_loss(pinn, x_obs, t_obs, u_obs_noisy)
+
+    loss = (
+        LAMBDA_PDE * loss_pde
+        + LAMBDA_BC * loss_bc
+        + LAMBDA_IC * loss_ic
+        + LAMBDA_OBS * loss_obs
+    )
+
+    loss.backward()
+    return loss
+```
+
+The closure recomputes the full loss and its gradients whenever L-BFGS needs them. Therefore, the training points should remain fixed during the L-BFGS phase. If the collocation, boundary, initial, or observation points were resampled inside the closure, the optimizer would see a different objective function at each evaluation. This would make the curvature approximation unreliable.
+
+
+## 6. Finite Difference Baseline
+
+The finite difference method is used as a classical reference solution.
+
+The spatial and temporal grids are
+
+$$x_i=i\Delta x, \qquad t_n=n\Delta t,$$
+
+and the numerical approximation is
+
+$$u_i^n \approx u(x_i,t_n).$$
+
+Using a forward difference in time and a centered difference in space gives the explicit FTCS scheme:
+
+$$u_i^{n+1}=u_i^n+r\left(u_{i+1}^n-2u_i^n+u_{i-1}^n\right),$$
+
+where
+
+$$r=\alpha\frac{\Delta t}{\Delta x^2}.$$
+
+The method is stable only if
+
+$$r\leq \frac{1}{2}.$$
+
+For this simple one-dimensional benchmark, the finite difference solution is expected to be very accurate when the grid is sufficiently fine and the stability condition is satisfied.
+
+---
+
+## 7. Project Structure
 
 ```text
-simple-pinn-heat-equation-pytorch/
+pinn-heat-equation/
 │
-├── training.py
-├── model.py
-├── losses.py
-├── sampling.py
-├── analyticSolutions.py
-├── finite_difference.py
-├── plot.py
+├── 01_1D-Heat-Equation-Forward/
+│   ├── training.py
+│   ├── model.py
+│   ├── losses.py
+│   ├── sampling.py
+│   ├── analyticSolutions.py
+│   ├── finiteDifference.py
+│   ├── plot.py
+│   └── README.md
+│
+├── 02_1D-Heat-Equation-Inverse/
+│   ├── trainingInversePinn.py
+│   ├── modelInversePinn.py
+│   ├── lossesInversePinn.py
+│   ├── samplingInversePinn.py
+│   ├── plotInversePinn.py
+│   └── README.md
+│
+├── 03_1D-Heat-Equation-Finite-Difference/
+│   └── finiteDifference.py
+│
 ├── requirements.txt
 └── README.md
 ```
 
----
+### Main Files
 
-## Files
-
-### `model.py`
-
-Defines the neural network architecture used to approximate
-
-$$
-u_\theta(x,t).
-$$
-
-The model is a fully connected MLP. It receives `x` and `t`, concatenates them, and outputs the predicted solution value.
-
----
-
-### `losses.py`
-
-Contains the physics-informed loss functions:
-
-- PDE residual loss,
-- initial condition loss,
-- boundary condition loss,
-- total weighted loss construction.
-
-The PDE loss uses PyTorch autograd to compute the derivatives required by the heat equation.
+| File | Purpose |
+|---|---|
+| `model.py` | Defines the forward PINN architecture |
+| `losses.py` | Defines PDE, initial, and boundary losses |
+| `sampling.py` | Samples interior, boundary, and initial points |
+| `analyticSolutions.py` | Provides the exact heat equation solution |
+| `finiteDifference.py` | Implements the FTCS finite difference method |
+| `plot.py` | Plots forward PINN results and comparisons |
+| `modelInversePinn.py` | Defines the inverse PINN with trainable \(\alpha\) |
+| `lossesInversePinn.py` | Adds observation loss for inverse training |
+| `samplingInversePinn.py` | Generates synthetic observation data |
+| `plotInversePinn.py` | Plots alpha convergence and inverse results |
+| `training.py` | Runs forward PINN training |
+| `trainingInversePinn.py` | Runs inverse PINN training and alpha recovery |
 
 ---
 
-### `sampling.py`
+## 8. Installation
 
-Contains functions for sampling:
-
-- interior collocation points,
-- boundary points,
-- initial condition points.
-
-The training points are randomly resampled during training.
-
----
-
-### `analyticSolutions.py`
-
-Contains the analytical solution
-
-$$
-u(x,t)=e^{-\alpha \pi^2 t}\sin(\pi x).
-$$
-
-This is used for comparison with both the PINN and the finite difference method.
-
----
-
-### `finiteDifference.py`
-Implements the explicit finite difference method for the 1D heat equation.
-
-The spatial and temporal grid points are defined as
-
-$$
-x_i = i\Delta x,
-\qquad
-t_n = n\Delta t.
-$$
-
-The finite difference method computes a grid-based approximation
-
-$$
-u_i^n \approx u(x_i,t_n),
-$$
-
-where (U_i^n) denotes the numerical approximation at spatial grid point (x_i) and time step (t_n).
-
-The values are advanced in time using the FTCS update rule.
-
----
-
-### `plot.py`
-
-Contains plotting functions for:
-
-- PINN vs analytical solution,
-- PINN vs finite difference method,
-- absolute error comparison,
-- loss history visualization.
-
----
-
-### `training.py`
-
-Runs the PINN training loop.
-
-The training loop repeatedly:
-
-1. samples interior, boundary, and initial points,
-2. computes the PDE, boundary, and initial losses,
-3. combines them into a weighted total loss,
-4. performs backpropagation,
-5. updates the model parameters with Adam,
-6. stores the loss history.
-
----
-
-## Installation
-
-Install the required packages with:
+Install the dependencies with:
 
 ```bash
 pip install -r requirements.txt
@@ -626,132 +466,181 @@ tqdm
 
 ---
 
-## How to Run
+## 9. How to Run
 
-Train the PINN with:
+### Forward PINN
+
+From the forward project folder:
 
 ```bash
 python training.py
 ```
 
-During training, the script prints the total loss and the individual loss components:
+The script trains the forward PINN and can plot:
 
-```text
-Total loss
-PDE loss
-Boundary loss
-Initial loss
+- training loss history,
+- PINN prediction versus analytical solution,
+- PINN prediction versus finite difference solution,
+- absolute error comparisons.
+
+### Inverse PINN
+
+From the inverse project folder:
+
+```bash
+python trainingInversePinn.py
 ```
 
-After training, the project can plot:
-
-- the training loss history,
-- the exact solution compared with the PINN prediction,
-- the exact solution compared with the finite difference solution,
-- the absolute errors of both methods.
+The script trains the inverse PINN, prints the learned value of \(\alpha\), and plots alpha convergence.
 
 ---
 
-## GPU Support
-
-The project can use a CUDA-capable GPU if available.
-
-The device is selected with:
+## 10. Current Inverse Configuration
 
 ```python
-device = "cuda" if torch.cuda.is_available() else "cpu"
+T = 2.0
+
+ADAM_EPOCHS = 1000
+USE_LBFGS = True
+LBFGS_MAX_ITER = 1000
+
+N_INTERIOR = 2000
+N_BOUNDARY = 200
+N_INITIAL = 200
+N_OBS = 500
+
+LAMBDA_PDE = 1.0
+LAMBDA_BC = 1.0
+LAMBDA_IC = 1.0
+LAMBDA_OBS = 1.0
+
+alpha_true = 1.0
+noise_level = 0.0
+
+LR_NET = 2e-4
+LR_ALPHA = 5e-3
+
+T_OBS_MIN = 0.02
+T_OBS_MAX = 0.30
 ```
 
-The model and training tensors are moved to the same device.  
-During plotting, GPU tensors are moved back to CPU before converting them to NumPy arrays.
+The observation data, collocation points, boundary points, and initial points are sampled once and then reused during training. This makes experiments easier to compare across different noise levels.
 
 ---
 
-## Results and Interpretation
+## 11. Results
 
-The results are evaluated in three parts. First, the training behavior of the PINN is analyzed through the loss curves. Then, the learned PINN solution is compared with the analytical solution and the finite difference approximation. Finally, the absolute error is visualized to better understand where the PINN deviates from the exact solution.
+Disclaimer: For the Forward PINN, we only used ADAM as optimizer.
 
-### Training Behavior
+### Forward PINN Training
 
-The following plot shows the development of the different loss components during training.
+![PINN loss](https://hackmd.io/_uploads/S1UJ208ZGg.png)
 
-![pinnloss](https://hackmd.io/_uploads/S1UJ208ZGg.png)
+The total loss decreases strongly at the beginning and then approaches a plateau. The initial and boundary losses become small, showing that the network learns the initial sine profile and the homogeneous boundary conditions well.
 
-The total loss decreases strongly during the first part of training and then gradually approaches a plateau. This indicates that the PINN successfully learns the main constraints of the problem.
+The PDE loss decreases more slowly because satisfying the differential equation throughout the full interior domain is more difficult than matching sampled initial and boundary values.
 
-The initial condition loss decreases very quickly. This shows that the network learns the initial sine profile
+### Forward PINN vs Analytical and Finite Difference Solutions
+
+![Comparison with finite difference](https://hackmd.io/_uploads/SJ8z2R8-zg.png)
+
+The PINN captures the overall heat-equation behavior: the initial sine profile decays over time. At early times, the match is very good. At later times, small deviations become more visible because the exact solution is already close to zero.
+
+The finite difference approximation almost overlaps with the analytical solution at the shown time points. This is expected for a smooth one-dimensional problem on a simple domain.
+
+### Forward PINN Absolute Error
+
+![Function behavior](https://hackmd.io/_uploads/HJpMnCLbzg.png)
+
+The absolute error is small for most of the domain. The largest visible errors occur near later times and close to the boundaries. This shows that the PINN learns the qualitative solution behavior well, but does not match the exact solution as accurately as the finite difference method.
+
+### Inverse PINN Loss development during training
+
+The figure shows the development of the total loss and the individual PINN loss components during training. A moving average with window size 500 is used to make the overall trend easier to see.
+
+All loss components decrease steadily over the course of training. Since the y-axis is logarithmic, this corresponds to a reduction by several orders of magnitude. The initial condition loss is relatively large at the beginning, which is expected because the network has not yet learned the correct solution shape. As training progresses, the PDE loss, boundary loss, and initial condition loss are all reduced consistently.
+
+Around epoch 1000, the loss decreases much more sharply. This marks the transition from the first optimization phase to the refinement phase. In this stage, the already pre-trained network is improved further, leading to significantly smaller residuals.
+
+The final losses are very small, with the total loss reaching approximately \(10^{-5}\). This indicates that the trained PINN satisfies the heat equation, the boundary condition, and the initial condition accurately in the noise-free case.
+![loss over training inverse pinn](https://hackmd.io/_uploads/rk_nQjYWfg.png)
+
+### PINN prediction compared to the analytical solution
+
+The figure compares the trained PINN prediction with the analytical solution at several fixed time points.
+
+At early times, especially at $t=0$ and $t=0.25$, the PINN matches the real solution very well. The predicted curve almost overlaps with the analytical solution, and the absolute error is close to zero. This shows that the network learned the initial condition and the early-time behaviour of the heat equation accurately.
+
+At later times, the solution of the heat equation becomes very small because the initial sine profile decays exponentially. Around $t=0.5$, the PINN still captures the correct overall shape, but a small amplitude error becomes visible. The prediction is slightly below the real solution in the interior and shows small deviations near the boundary.
+
+At $t=1.0$, the real solution is already close to zero. Although the absolute error is still small in numerical terms, it becomes large compared to the magnitude of the true solution. Therefore, the relative error is much more visible at late times. The PINN still produces values of order $10^{-4}$, while the true solution is almost fully decayed.
+
+This shows an important limitation of the training setup: minimizing an absolute mean squared error can lead to very small total losses while still producing noticeable relative errors when the true solution itself is close to zero.
+![comparison pinn and eal solution](https://hackmd.io/_uploads/SySrVotWfx.png)
+
+### Inverse PINN Learning of $\alpha$
+
+Since $\alpha$ is only a single scalar but directly affects the PDE residual, its learning rate is especially sensitive.
+
+The plot shows that $\alpha$ does not converge smoothly from the beginning. During the early training phase, the network approximation is still inaccurate, so the gradients with respect to $\alpha$ are not yet very reliable. This causes an initial overshoot and correction. After the PINN has learned a better approximation of the solution, the updates of $\alpha$ become more stable and the parameter gradually moves toward the true value.
+
+In the noise-free case, the chosen learning rate is stable enough to recover the correct value:
 
 $$
-u(x,0)=\sin(\pi x)
+\alpha_{\text{true}} = 1.0
 $$
 
-well. The boundary loss also becomes small, meaning that the network approximately satisfies the boundary conditions
 
-$$
-u(0,t)=0,
-\qquad
-u(1,t)=0.
-$$
+After the initial transient phase, the learned parameter converges very close to the true diffusion coefficient. This confirms that, without observation noise, the inverse PINN can correctly identify the physical parameter when the learning rate is chosen carefully.
+![alpha learning](https://hackmd.io/_uploads/B1zbmjF-zg.png)
+### Inverse PINN Alpha Recovery
 
-The PDE loss decreases more slowly and remains one of the larger components near the end of training. This is expected because satisfying the differential equation throughout the full interior domain is more difficult than matching the initial and boundary values at sampled points.
+The inverse PINN is evaluated by comparing the learned coefficient with the true value:
 
-Overall, the loss curves show that the training process is stable. However, the plateau in the total loss also indicates that the model does not reach an exact solution. Small approximation errors remain, especially at later time values.
+$$\alpha_{\text{learned}} \approx \alpha_{\text{true}}.$$
 
-### Comparison with Analytical and Finite Difference Solutions
+The relative error is computed as
 
-The following plots compare the analytical solution, the PINN prediction, and the finite difference approximation at different time points.
+$$\text{relative error}=\frac{|\alpha_{\text{learned}}-\alpha_{\text{true}}|}{|\alpha_{\text{true}}|}.$$
 
-![comparison with finite difference](https://hackmd.io/_uploads/SJ8z2R8-zg.png)
+| Data noise | Sensor count | $\alpha_{\text{true}}$ | $\alpha_{\text{learned}}$ | Relative error |
+|---:|---:|---:|---:|---:|
+| 0% | 500 | 1.0 | 0.999920 | 0.000080 |
+| 1% | 500 | 1.0 | 0.999637 | 0.000363 |
+| 5% | 500 | 1.0 | 0.998339 | 0.001661 |
+| 10% | 500 | 1.0 | 0.996637 | 0.003363 |
 
-At (t=0), the PINN prediction matches the initial condition very closely. This is consistent with the small initial condition loss observed during training.
+The results show that $\alpha$ is recovered accurately for clean data and remains stable under moderate noise.
 
-At (t=0.25), the PINN still follows the analytical solution very well. The solution has already decayed significantly compared to the initial state, and the PINN captures this decay correctly.
+### Influence of the Number of Observation Points
 
-At (t=0.5), small deviations become more visible, especially close to the boundary points. The PINN still captures the correct overall sine-like shape, but it does not match the analytical solution perfectly.
+In the noise-free case, changing the number of observation points had only a small effect on the recovered value of $\alpha$. Once the observations cover the relevant time interval well enough, even a small number of clean data points can already identify the decay behaviour of the solution.
 
-At (t=1.0), the analytical solution is already very close to zero because the heat equation causes the initial temperature profile to decay over time. In this regime, even small absolute errors become visually significant. The PINN slightly undershoots the true solution and produces small negative values. This does not mean that the model completely fails, but it shows that the relative error becomes more noticeable when the true solution itself is very small.
+This is why the results for 10, 100, or even 10000 observation points can be very similar. Adding more points does not automatically make the observation loss more important, because the loss is averaged over all observation points. More points mainly improve how well the observation region is sampled.
 
-The finite difference approximation almost overlaps with the analytical solution at all shown time points. This is expected because the problem is one-dimensional, smooth, and defined on a simple domain. For this type of problem, classical finite difference methods are very accurate when the grid resolution is sufficiently fine and the stability condition is satisfied.
+The situation changes when noise is added. With noisy observations, a small number of points can give a distorted impression of the true solution behaviour. In that case, increasing the number of observation points becomes much more relevant, because the random noise is averaged out over more samples.
 
-### Absolute Error of the PINN
 
-The following plot shows the analytical solution, the PINN prediction, and the absolute error between them.
-
-![function behaviour](https://hackmd.io/_uploads/HJpMnCLbzg.png)
-
-The absolute error is small for most of the domain at early and intermediate time values. This confirms that the PINN learns the qualitative behavior of the heat equation well.
-
-At (t=0.5), the largest errors appear near the boundary points. This suggests that the boundary conditions are approximately learned, but not enforced perfectly.
-
-At (t=1.0), the absolute error becomes more important compared to the magnitude of the analytical solution. The true solution is almost zero, while the PINN still produces small negative values. Therefore, the absolute error is still small in numerical size, but it is large relative to the exact solution.
-
-### Overall Interpretation
-
-The PINN successfully learns the main behavior of the one-dimensional heat equation. It captures the initial sine-shaped temperature profile and its decay over time. The results show that the model is able to approximate the solution using the PDE residual, the initial condition, and the boundary conditions as training constraints.
-
-However, the comparison also shows that the finite difference method is more accurate for this simple benchmark problem. This is not surprising. For low-dimensional PDEs on simple domains, classical numerical methods such as finite differences are highly efficient, stable, and accurate.
-
----
-
-## Possible Improvements
+## 12. Possible Improvements
 
 Possible extensions include:
 
 - using a deeper or wider MLP,
-- testing different activation functions,
 - applying adaptive loss weighting,
-- using adaptive sampling strategies,
----
+- using adaptive collocation sampling,
+- increasing the number of collocation points,
+- enforcing positivity of $\alpha$ with a parametrization such as `softplus`,
 
-
-## Disclaimer
-
-This project is a learning-focused baseline implementation.  
-The goal is to understand the mechanics of PINNs and compare them with a simple classical numerical method.
 
 ---
 
-## References
+## 13. Disclaimer
+
+This project is a learning-focused baseline implementation. It is not intended to prove that PINNs outperform classical numerical solvers on this simple one-dimensional problem.
+
+---
+
+## 14. References
 
 - M. Raissi, P. Perdikaris, and G. E. Karniadakis, *Physics-informed neural networks: A deep learning framework for solving forward and inverse problems involving nonlinear partial differential equations*, Journal of Computational Physics, 2019.
 - N. Thuerey et al., *Physics-based Deep Learning*, online book.
